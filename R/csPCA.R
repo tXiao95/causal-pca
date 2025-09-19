@@ -28,21 +28,51 @@
 #'   \item{mu_X}{The estimated causal mean vector \eqn{\mu(X)}.}
 #' }
 csPCA <- function(Y, X, C,
+                  L = 1, folds = NULL,
                   mu_fun = gcomp,          # function to estimate mu(X)
                   mu_args = list(),        # args passed to mu_fun
                   mave_args = list()) {    # args passed to MAVE::mave
   
   stopifnot(length(Y) == nrow(X), nrow(X) == nrow(C))
+  n <- nrow(X)
+  # Cross-fitting setup -----------------------------------------------------
+  if (is.null(folds)) 
+    folds <- sample(rep(1:L, length.out = n))
+  stopifnot(length(folds) == n, all(folds %in% 1:L))
   
-  # 1) Estimate causal mean mu(X)
-  mu_X <- do.call(mu_fun, c(list(Y = Y, X = X, C = C), mu_args))
+  
+  if(L > 1){
+    message("Cross-fitting with ", L, " folds")
+    mu_X <- numeric(n)
+    for (l in 1:L) {
+      message("Fold ", l)
+      idx_tr <- which(folds != l)
+      idx_te <- which(folds == l)
+      
+      # fit on training fold -> get predictor closure
+      pred_mu <- do.call( mu_fun, c(list(Y = Y[idx_tr],
+                                        X = X[idx_tr, , drop = FALSE], 
+                                        C = C[idx_tr, , drop = FALSE], 
+                                        X.new = X[idx_te, , drop = FALSE]), mu_args) )
+      
+      # predict mu(X_i) for test fold, integrating over C from training fold
+      mu_X[idx_te] <- pred_mu
+    }
+  } else{
+    # 1) Estimate causal mean mu(X)
+    message("Super Learner")
+    mu_X <- do.call(mu_fun, c(list(Y = Y, X = X, C = C), mu_args))
+  }
   
   # 2) Prepare data for MAVE
   df <- data.frame(mu_X = as.numeric(mu_X), as.data.frame(X), check.names = FALSE)
   
   # 3) Build MAVE args with sensible defaults, allow user overrides
+  message("MAVE")
   base_args <- list(formula = mu_X ~ ., data = df, method = "meanMAVE")
   fit <- do.call(MAVE::mave, utils::modifyList(base_args, mave_args))
+  
+  # 4) Postprocessing: ensure MAVE outputs for each 'd' are orthonormal.
   
   structure(list(mave = fit, mu_X = mu_X), class = "csPCA_fit")
 }

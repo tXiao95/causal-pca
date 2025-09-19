@@ -1,11 +1,8 @@
 gcomp <- function(Y, X, C, X.new = NULL, 
                                SL.library = c("SL.glm", 
                                               "SL.gam", 
-                                              "SL.mean",
-                                              "SL.earth",
+                                              "SL.svm",
                                               "SL.xgboost",
-                                              "SL.ranger",
-                                              "SL.randomForest",
                                               "SL.glmnet")) {
   n <- length(Y); p <- ncol(X); q <- ncol(C)
   
@@ -24,6 +21,8 @@ gcomp <- function(Y, X, C, X.new = NULL,
   # If no new X values provided, just solve for the previous ones
   if (is.null(X.new)) {
     X.new <- X
+  } else{
+    X.new <- data.frame(X.new)
   }
   m <- nrow(X.new)
   
