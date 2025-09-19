@@ -154,3 +154,4 @@ get_fA_fAC <- function(C, A, Y, dat, method, samp_size){
               idx=idx)) 
   
 }
+
