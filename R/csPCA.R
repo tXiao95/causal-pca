@@ -40,7 +40,6 @@ csPCA <- function(Y, X, C,
     folds <- sample(rep(1:L, length.out = n))
   stopifnot(length(folds) == n, all(folds %in% 1:L))
   
-  
   if(L > 1){
     message("Cross-fitting with ", L, " folds")
     mu_X <- numeric(n)
@@ -70,7 +69,7 @@ csPCA <- function(Y, X, C,
   # 3) Build MAVE args with sensible defaults, allow user overrides
   message("MAVE")
   base_args <- list(formula = mu_X ~ ., data = df, method = "meanMAVE")
-  fit <- do.call(MAVE::mave, utils::modifyList(base_args, mave_args))
+  fit       <- do.call(MAVE::mave, utils::modifyList(base_args, mave_args))
   
   # 4) Postprocessing: ensure MAVE outputs for each 'd' are orthonormal.
   
