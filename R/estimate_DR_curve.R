@@ -1,5 +1,6 @@
 library(KernSmooth)
 library(SuperLearner)
+library(tmle)
 
 #' @description Implementation of Kennedy et al. (2017) for estimate dose-response curve for 1D continuous treatment.
 #' @param Y (n x 1) vector of outcome/response
@@ -16,7 +17,9 @@ library(SuperLearner)
 
 estimate_DR_curve <- function(Y, Z, C,
                               Z.new = NULL,
-                              SL.library = c("SL.gam", 
+                              SL.library = c(
+                                             "SL.earth",
+                                             "tmle.SL.dbarts2",
                                              "SL.glmnet",
                                              "SL.glm"),
                               bw.range   = c(0.01, 50),
@@ -47,9 +50,7 @@ estimate_DR_curve <- function(Y, Z, C,
   
   # Original covariates and treatment
   CZ          <- cbind(C, Z = Z)                               # n rows
-  # Replicate the covariates and treatment 'n' times. 
-  # CZ.pred     <- cbind(C[rep(seq_len(n), each = n), , drop = FALSE],
-  #                      Z = rep(Z, times = n))                  # n*m rows
+  # Replicate the covariates and treatment 'm' times for evaluation points.
   CZ.pred     <- cbind( C[rep(seq_len(n), m), , drop = FALSE],
                         Z = rep(Z.new, rep(n, m)) )                  # n*m rows
   
@@ -153,7 +154,10 @@ estimate_DR_curve <- function(Y, Z, C,
   ## ------------------------------------------------------------------ ##
   ## 7.  Final dose–response estimate at original Z values
   ## ------------------------------------------------------------------ ##
-  est <- approx(locpoly(Z, pseudo.out, bandwidth = h.opt), xout = Z)$y
+  est <- approx(locpoly(Z, pseudo.out, bandwidth = h.opt), xout = Z.new)$y
+  
+
+  # Estimate sandwich-style pointwise confidence band -----------------------
   
   ## ------------------------------------------------------------------ ##
   ## 8.  Return

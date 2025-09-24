@@ -1,37 +1,6 @@
 library(nloptr)
 library(ManifoldOptim)
 
-source("R/misc.R")
-
-#' Causal doPCA
-#'
-#' @description Estimate the first causal principal direction using doPCA
-#'
-#' @param Y Numeric vector (n x 1) – outcome.
-#' @param X Numeric matrix (n x p) – multidimensional treatment.
-#' @param C Numeric matrix (n x q) – baseline confounders.
-#' @param maxit Integer.  Maximum iterations 
-#' @param verbose Logical.  Print objective value during optimisation.
-#'
-#' @return List with elements
-#'
-#' @export
-#'
-#' @examples
-#' set.seed(1)
-# n <- 200; p <- 3; q <- 2
-# X <- matrix(rnorm(n*p), n, p)
-# C <- matrix(rnorm(n*q), n, q)
-# omega_true <- c(1,0.5,-0.5); omega_true <- omega_true/sqrt(sum(omega_true^2))
-# Z <- X %*% omega_true
-# Y <- 2*Z + 0.5*C[,1] + rnorm(n)
-# res <- doPCA(Y, X, C)
-# res$omega
-
-dat <- sim_additive(200)
-Y <- dat$Y
-X <- dat$X
-C <- dat$C
 doPCA <- function(Y, X, C, d = 2, mu_est = "gcomp", scaled = FALSE, maxit = 5000, verbose = FALSE, omega0 = NULL){
   # n <- nrow(X); p <- ncol(X); q <- ncol(C); d <- 2
   
