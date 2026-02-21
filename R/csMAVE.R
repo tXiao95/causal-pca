@@ -27,7 +27,7 @@
 #'   \item{mave}{The fitted MAVE object returned by \code{MAVE::mave}.}
 #'   \item{mu_X}{The estimated causal mean vector \eqn{\mu(X)}.}
 #' }
-csPCA <- function(Y, X, C,
+csMAVE <- function(Y, X, C,
                   L = 1, folds = NULL,
                   mu_fun = gcomp,          # function to estimate mu(X)
                   mu_args = list(),        # args passed to mu_fun
@@ -40,6 +40,7 @@ csPCA <- function(Y, X, C,
     folds <- sample(rep(1:L, length.out = n))
   stopifnot(length(folds) == n, all(folds %in% 1:L))
   
+  # Use this block for mu(X) and pseudo-outcome
   if(L > 1){
     message("Cross-fitting with ", L, " folds")
     mu_X <- numeric(n)
@@ -62,6 +63,8 @@ csPCA <- function(Y, X, C,
     message("Super Learner")
     mu_X <- do.call(mu_fun, c(list(Y = Y, X = X, C = C), mu_args))
   }
+  
+  # Use this block for E(Y|C) and E(X|C)
   
   # 2) Prepare data for MAVE
   df <- data.frame(mu_X = as.numeric(mu_X), as.data.frame(X), check.names = FALSE)

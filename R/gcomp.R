@@ -15,7 +15,7 @@ gcomp <- function(Y, X, C, X.new = NULL, ...) {
   if (is.null(X.new)) {
     X.new <- X
   } else{
-    X.new <- data.frame(X.new)
+    X.new <- data.frame(X.new); colnames(X.new) <- paste0("X", 1:p)
     if (ncol(X.new) != p) stop("X.new must have the same number of columns as X.")
   }
   m <- nrow(X.new)

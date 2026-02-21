@@ -21,9 +21,7 @@ cppFunction('
     
     // Pre-calculate constants for the Gaussian kernel
     // FIX 1: Explicitly cast the integer d to double to avoid ambiguous pow() overloads
-    double h_pow = std::pow(b, (double)d); 
-    double inv_sqrt_2pi = 1.0 / std::sqrt(2.0 * arma::datum::pi);
-    
+   // The C++ Loop 
     for (int i = 0; i < n; i++) {
       arma::rowvec beta_x_i = betaX.row(i);
       
@@ -32,7 +30,11 @@ cppFunction('
       
       arma::colvec dists = arma::sqrt(arma::sum(arma::square(diff_betaX), 1));
       arma::colvec u = dists / b;
-      arma::colvec weights = (1.0 / h_pow) * inv_sqrt_2pi * arma::exp(-0.5 * arma::square(u));
+      
+      // NUMERICAL FIX: Drop the scaling constants. 
+      // The weights are now strictly between 0 and 1, preventing underflow 
+      // and stabilizing the ridge penalty!
+      arma::colvec weights = arma::exp(-0.5 * arma::square(u));
       
       Z.cols(1, d) = diff_betaX;
       int col_idx = d + 1;
@@ -53,7 +55,6 @@ cppFunction('
       
       m_est(i) = coeffs(0);
       
-      // FIX 2: Manually map the coefficients to the matrix row to avoid transpose template errors
       for(int k = 0; k < d; k++) {
          m_prime_est(i, k) = coeffs(k + 1);
       }
