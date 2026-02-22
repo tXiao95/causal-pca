@@ -1,5 +1,5 @@
 library(MASS) # For ginv
-library(SuperLearner)
+#library(SuperLearner)
 library(Rcpp)
 library(RcppArmadillo) # Ensure this is loaded
 
@@ -10,9 +10,17 @@ Pi <- function(beta) {
   beta %*% solve(t(beta) %*% beta) %*% t(beta)
 }
 
+Delta <- function(beta1, beta2, type = "F"){
+  Pi1 <- Pi(beta1)
+  Pi2 <- Pi(beta2)
+  
+  return( norm(Pi1 - Pi2, type = type) )
+}
+
 # Nuisances ---------------------------------------------------------------
 
 # estimate_m_gradient_cpp
+# Careful! This function only takes a matrix object X (no data.frame), and it cannot have column names
 cppFunction('
   Rcpp::List estimate_m_gradient_cpp(arma::mat X, arma::colvec Y, arma::mat beta, double b) {
     int n = X.n_rows;
@@ -93,35 +101,35 @@ estimate_sigma2 <- function(X, residuals, h) {
   as.vector(pmax(num / den, 1e-6))
 }
 
-# Replaces the 'h' bandwidth parameter with your machine learning library
-estimate_sigma2_SL <- function(X, residuals, SL.library = c("SL.mean", "SL.glm", "SL.glmnet", "SL.ranger")) {
-  
-  # SuperLearner rigidly requires the predictor matrix to be a data.frame
-  X_df <- as.data.frame(X)
-  
-  # The target outcome for a variance estimator is the squared residuals
-  Y_var <- residuals^2
-  
-  # Fit the ensemble model
-  # suppressWarnings keeps the console clean from algorithm-specific convergence chatter
-  suppressWarnings({
-    sl_fit <- SuperLearner(
-      Y = Y_var,
-      X = X_df,
-      family = gaussian(),
-      SL.library = SL.library,
-      cvControl = list(V = 5) # 5-fold CV internally for the ensemble weights
-    )
-  })
-  
-  # Extract the final predicted variances for every observation
-  sigma2_est <- sl_fit$SL.predict
-  
-  # CRITICAL SAFETY: Unconstrained ML models (like GLM or Random Forests) 
-  # can occasionally predict zero or negative values for specific outliers. 
-  # We rigorously floor the variance to prevent Newton-Raphson explosions.
-  as.vector(pmax(sigma2_est, 1e-6))
-}
+# # Replaces the 'h' bandwidth parameter with your machine learning library
+# estimate_sigma2_SL <- function(X, residuals, SL.library = c("SL.mean", "SL.glm", "SL.glmnet", "SL.ranger")) {
+#   
+#   # SuperLearner rigidly requires the predictor matrix to be a data.frame
+#   X_df <- as.data.frame(X)
+#   
+#   # The target outcome for a variance estimator is the squared residuals
+#   Y_var <- residuals^2
+#   
+#   # Fit the ensemble model
+#   # suppressWarnings keeps the console clean from algorithm-specific convergence chatter
+#   suppressWarnings({
+#     sl_fit <- SuperLearner(
+#       Y = Y_var,
+#       X = X_df,
+#       family = gaussian(),
+#       SL.library = SL.library,
+#       cvControl = list(V = 5) # 5-fold CV internally for the ensemble weights
+#     )
+#   })
+#   
+#   # Extract the final predicted variances for every observation
+#   sigma2_est <- sl_fit$SL.predict
+#   
+#   # CRITICAL SAFETY: Unconstrained ML models (like GLM or Random Forests) 
+#   # can occasionally predict zero or negative values for specific outliers. 
+#   # We rigorously floor the variance to prevent Newton-Raphson explosions.
+#   as.vector(pmax(sigma2_est, 1e-6))
+# }
 
 # Estimate the ratio E(X / sigma2 | beta'X) / E(1 / sigma2 | beta'X)
 estimate_Eq_betaX <- function(X, beta, sigma2, b){
@@ -147,13 +155,13 @@ estimate_Eq_betaX <- function(X, beta, sigma2, b){
 
 # Efficient score ---------------------------------------------------------
 # 2. Fully Vectorized Main Update (Eliminates the 2400ms ratio_term loop bottlenecks)
-compute_efficient_score_and_update <- function(X, Y, beta, b, h, SL = TRUE, sigma2 = NULL, alpha = 1) {
+compute_efficient_score_and_update <- function(X, Y, beta, b, h, SL = FALSE, sigma2 = NULL, alpha = 1) {
   n <- nrow(X)
   p <- ncol(X)
   d <- ncol(beta)
   
   # Nuisance estimation
-  m_results  <- estimate_m_gradient_cpp(X, Y, beta, b); residuals <- Y - m_results$m_est
+  m_results  <- estimate_m_gradient_cpp(X, matrix(Y, ncol=1), beta, b); residuals <- Y - m_results$m_est
   sigma2     <- if (!is.null(sigma2)) sigma2 else (if (SL) estimate_sigma2_SL(X, residuals) else estimate_sigma2(X, residuals, h))
   ratio_term <- estimate_Eq_betaX(X, beta, sigma2, b)
   # ------------------------------------------------
@@ -184,12 +192,13 @@ compute_efficient_score_and_update <- function(X, Y, beta, b, h, SL = TRUE, sigm
 }
 
 # Main iterative loop (No QR decomposition inside the loop)
-run_efficient_estimator <- function(X, Y, beta_init, b=NULL, h=NULL, max_iters = 100, SL = TRUE, sigma2 = NULL, alpha = 1) {
+run_efficient_estimator <- function(X, Y, beta_init, b=NULL, h=NULL, max_iters = 100, SL = FALSE, sigma2 = NULL, alpha = 1, threshold = NULL) {
   n <- nrow(X)
   p <- ncol(X)
+  d <- ncol(beta_init)
   
   beta_current <- beta_init
-  threshold <- p / n 
+  if(is.null(threshold)){threshold <- p / n }
   
   # Bandwidths
   b <- if(is.null(b)) n^(-1 / (d + 4)) else b
@@ -201,10 +210,7 @@ run_efficient_estimator <- function(X, Y, beta_init, b=NULL, h=NULL, max_iters =
     beta_next <- compute_efficient_score_and_update(X, Y, beta_current, b, h, SL = SL, sigma2 = sigma2,alpha = alpha)
     #beta_next <- qr.Q(qr(beta_next))
     
-    pi_current <- Pi(beta_current)
-    pi_next <- Pi(beta_next)
-    
-    dist <- norm(pi_current - pi_next, "F")
+    dist <- Delta(beta_current, beta_next)
     cat(sprintf("Distance after iteration %d: %f (Threshold: %f)\n", k, dist, threshold))
     
     if (dist < threshold) {
