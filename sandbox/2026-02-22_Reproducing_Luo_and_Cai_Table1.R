@@ -23,8 +23,10 @@ reproduce_table_1 <- function(n_reps = 1, n = 200, p = 10) {
     Model = model_names,
     MAVE_mean   = numeric(5), MAVE_sd   = numeric(5),
     EE4_mean    = numeric(5), EE4_sd    = numeric(5),
+    Oracle_mean    = numeric(5), Oracle_sd    = numeric(5),
     MAVE_mean_S = numeric(5), MAVE_sd_S = numeric(5),
-    EE4_mean_S  = numeric(5), EE4_sd_S  = numeric(5)
+    EE4_mean_S  = numeric(5), EE4_sd_S  = numeric(5),
+    Oracle_mean_S  = numeric(5), Oracle_sd_S  = numeric(5)
   )
   
   cat("Starting simulation suite (", n_reps, " replications per model)...\n", sep = "")
@@ -34,7 +36,7 @@ reproduce_table_1 <- function(n_reps = 1, n = 200, p = 10) {
     
     # 2. Use a matrix to store the 4 distance metrics for the current model
     # Columns: 1=MAVE(F), 2=EE4(F), 3=MAVE(S), 4=EE4(S)
-    dist_mat <- matrix(NA_real_, nrow = n_reps, ncol = 4)
+    dist_mat <- matrix(NA_real_, nrow = n_reps, ncol = 6)
     
     for (i in seq_len(n_reps)) {
       # Use a dynamic seed to ensure distinct datasets per replicate 
@@ -46,6 +48,7 @@ reproduce_table_1 <- function(n_reps = 1, n = 200, p = 10) {
       Y <- sim_data$Y
       beta_true <- sim_data$beta_true
       d <- sim_data$d
+      sigma2_true <- sim_data$sigma2_true
       
       # Fit MAVE initialization
       suppressWarnings({
@@ -65,14 +68,28 @@ reproduce_table_1 <- function(n_reps = 1, n = 200, p = 10) {
         b = b_val, 
         h = h_val,
         max_iters = 100, 
-        SL = FALSE, threshold = 0.01
+        SL = FALSE
+      )
+      
+      # Fit Oracle
+      beta_oracle <- run_efficient_estimator(
+        X = X, 
+        Y = Y, 
+        beta_init = beta_mave, 
+        b = b_val, 
+        h = h_val,
+        max_iters = 100, 
+        SL = FALSE,
+        sigma2 = sigma2_true
       )
       
       # Calculate Subspace Distances
       dist_mat[i, 1] <- Delta(beta_true, beta_mave, "F")
       dist_mat[i, 2] <- Delta(beta_true, beta_ee4,  "F")
-      dist_mat[i, 3] <- Delta(beta_true, beta_mave, "2")
-      dist_mat[i, 4] <- Delta(beta_true, beta_ee4,  "2")
+      dist_mat[i, 3] <- Delta(beta_true, beta_oracle,  "F")
+      dist_mat[i, 4] <- Delta(beta_true, beta_mave, "2")
+      dist_mat[i, 5] <- Delta(beta_true, beta_ee4,  "2")
+      dist_mat[i, 6] <- Delta(beta_true, beta_oracle,  "2")
       
       # Print a tiny progress tracker every 10 iterations
       if (i %% 10 == 0) cat(i, " ")
@@ -83,8 +100,8 @@ reproduce_table_1 <- function(n_reps = 1, n = 200, p = 10) {
     sds   <- apply(dist_mat, 2, sd)
     
     # Store in the pre-allocated dataframe
-    raw_results[m, c("MAVE_mean",   "EE4_mean",   "MAVE_mean_S", "EE4_mean_S")] <- means
-    raw_results[m, c("MAVE_sd",     "EE4_sd",     "MAVE_sd_S",   "EE4_sd_S")]   <- sds
+    raw_results[m, c("MAVE_mean",   "EE4_mean", "Oracle_mean",  "MAVE_mean_S", "EE4_mean_S", "Oracle_mean_S")] <- means
+    raw_results[m, c("MAVE_sd",     "EE4_sd", "Oracle_sd",    "MAVE_sd_S",   "EE4_sd_S", "Oracle_sd_S")]   <- sds
     
     cat("\n  MAVE Mean (F):", round(means[1], 3), " | EE4 Mean (F):", round(means[2], 3))
     cat("\n  MAVE Mean (S):", round(means[3], 3), " | EE4 Mean (S):", round(means[4], 3))
@@ -95,8 +112,10 @@ reproduce_table_1 <- function(n_reps = 1, n = 200, p = 10) {
     Model  = model_names,
     MAVE   = sprintf("%.3f\n(%.3f)", raw_results$MAVE_mean,   raw_results$MAVE_sd),
     EE4    = sprintf("%.3f\n(%.3f)", raw_results$EE4_mean,    raw_results$EE4_sd),
+    Oracle    = sprintf("%.3f\n(%.3f)", raw_results$Oracle_mean,    raw_results$Oracle_sd),
     MAVE_S = sprintf("%.3f\n(%.3f)", raw_results$MAVE_mean_S, raw_results$MAVE_sd_S),
-    EE4_S  = sprintf("%.3f\n(%.3f)", raw_results$EE4_mean_S,  raw_results$EE4_sd_S)
+    EE4_S  = sprintf("%.3f\n(%.3f)", raw_results$EE4_mean_S,  raw_results$EE4_sd_S),
+    Oracle_S  = sprintf("%.3f\n(%.3f)", raw_results$Oracle_mean_S,  raw_results$Oracle_sd_S)
   )
   
   cat("\n\n--- Final Results (", n_reps, " Replications) ---\n", sep = "")
@@ -111,7 +130,7 @@ reproduce_table_1 <- function(n_reps = 1, n = 200, p = 10) {
 
 # Execute the simulation
 # Note: This will take some time depending on your C++ and BLAS optimizations
-results <- reproduce_table_1(n_reps = 5, n = 200, p = 10)
+results <- reproduce_table_1(n_reps = 500, n = 200, p = 10)
 
 resultspath <- here("outputs", "experiments", "reproducing_luo_and_cai_Table1.rds")
 saveRDS(results, resultspath)

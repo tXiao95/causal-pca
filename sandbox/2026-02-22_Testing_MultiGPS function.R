@@ -29,8 +29,8 @@ ols_fitter <- function(W, C) {
 # 2. Define the Evaluation Grid and Fixed Confounders
 # ---------------------------------------------------------
 # We will evaluate a 20x20 grid around the expected conditional means
-pm_seq <- seq(12, 28, length.out = 20)
-no2_seq <- seq(8, 24, length.out = 20)
+pm_seq <- seq(12, 28, length.out = 5)
+no2_seq <- seq(8, 24, length.out = 5)
 eval_grid <- expand.grid(PM2.5 = pm_seq, NO2 = no2_seq)
 
 # We want the density evaluated specifically at Temp = 20
