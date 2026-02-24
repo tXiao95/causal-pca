@@ -204,22 +204,27 @@ run_efficient_estimator <- function(X, Y, beta_init, b=NULL, h=NULL, max_iters =
   b <- if(is.null(b)) n^(-1 / (d + 4)) else b
   h <- if(is.null(h)) n^(-1 / (4 * p)) else b
   
-  for (k in 1:max_iters) {
-    cat(sprintf("Starting iteration %d...\n", k))
-    
-    beta_next <- compute_efficient_score_and_update(X, Y, beta_current, b, h, SL = SL, sigma2 = sigma2,alpha = alpha)
-    #beta_next <- qr.Q(qr(beta_next))
-    
-    dist <- Delta(beta_current, beta_next)
-    cat(sprintf("Distance after iteration %d: %f (Threshold: %f)\n", k, dist, threshold))
-    
-    if (dist < threshold) {
-      cat("Convergence threshold reached.\n")
-      # Return the final estimate
-      beta_next <- qr.Q(qr(beta_next))
-      return(beta_next)
+  # Can set to no iterations (for convenience)
+  if(max_iters > 0){
+    for (k in 1:max_iters) {
+      cat(sprintf("Starting iteration %d...\n", k))
+      
+      beta_next <- compute_efficient_score_and_update(X, Y, beta_current, b, h, SL = SL, sigma2 = sigma2,alpha = alpha)
+      #beta_next <- qr.Q(qr(beta_next))
+      
+      dist <- Delta(beta_current, beta_next)
+      cat(sprintf("Distance after iteration %d: %f (Threshold: %f)\n", k, dist, threshold))
+      
+      if (dist < threshold) {
+        cat("Convergence threshold reached.\n")
+        # Return the final estimate
+        beta_next <- qr.Q(qr(beta_next))
+        return(beta_next)
+      }
+      beta_current <- beta_next
     }
-    beta_current <- beta_next
+  }else{
+    message("No updates were made as max_iters was set to 0.")
   }
   
   warning("Maximum iterations reached without falling below threshold.")
