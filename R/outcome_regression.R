@@ -1,5 +1,4 @@
 library(SuperLearner)
-library(parallel)
 
 #' Fit a Global Outcome Regression Object E[Y | X, C]
 #' 
@@ -10,89 +9,81 @@ library(parallel)
 #' @return An S3 object of class "outcome_model".
 
 outcome_model <- function(Y, X, C, mu_fitter, ...) {
-  n <- length(Y)
-  p <- ncol(X)
-  q <- ncol(C)
+  # 1. Capture original names BEFORE any coercion or processing
+  orig_X_names <- if(is.matrix(X) || is.data.frame(X)) colnames(X) else NULL
+  orig_C_names <- if(is.matrix(C) || is.data.frame(C)) colnames(C) else NULL
   
-  # Standardize column names for safe prediction later
-  C_df <- as.data.frame(C); colnames(C_df) <- paste0("C", 1:q)
-  X_df <- as.data.frame(X); colnames(X_df) <- paste0("X", 1:p)
+  # 2. Convert to data frames
+  X_df <- as.data.frame(X)
+  C_df <- as.data.frame(C)
+  p <- ncol(X_df)
+  q <- ncol(C_df)
   
-  df <- cbind(X_df, C_df)
+  # 3. Apply the Contract: Use original names if they exist, otherwise generate ours
+  # We use 'tx_' and 'conf_' prefixes to guarantee zero collision if we generate them
+  if (is.null(orig_X_names)) {
+    colnames(X_df) <- paste0("X", 1:p)
+  } else {
+    colnames(X_df) <- make.names(orig_X_names, unique = TRUE)
+  }
   
-  # Fit the model
-  inner_fit <- mu_fitter(Y, df, ...)
+  if (is.null(orig_C_names)) {
+    colnames(C_df) <- paste0("C", 1:q)
+  } else {
+    colnames(C_df) <- make.names(orig_C_names, unique = TRUE)
+  }
+  
+  # 4. Final safety check for overlaps
+  overlapping <- intersect(colnames(X_df), colnames(C_df))
+  if (length(overlapping) > 0) {
+    stop("Overlapping column names detected: ", paste(overlapping, collapse = ", "))
+  }
+  
+  # Fit using the consistent names
+  df_train <- cbind(X_df, C_df)
+  inner_fit <- mu_fitter(Y, df_train, ...)
   
   res <- list(
     inner_fit = inner_fit,
-    p = p,
-    q = q,
     X_names = colnames(X_df),
     C_names = colnames(C_df),
-    X_observed = X_df,
-    C_observed = C_df
+    p = p,
+    q = q
   )
-  
   class(res) <- "outcome_model"
   return(res)
 }
 
 #' Predict Method for Outcome Model
 predict.outcome_model <- function(object, newdata, ...) {
+  
+  # Ensure newdata is a data frame
+  newdata <- as.data.frame(newdata)
+  
+  # Combine required column names
+  req_cols <- c(object$X_names, object$C_names)
+  
+  # 1. Check for missing columns
+  missing_cols <- setdiff(req_cols, colnames(newdata))
+  if (length(missing_cols) > 0) {
+    stop(
+      "The following required columns are missing from 'newdata': ", 
+      paste(missing_cols, collapse = ", ")
+    )
+  }
+  
+  # 2. Subset and FORCE column order to match the training data exactly
+  newdata <- newdata[, req_cols, drop = FALSE]
+  
+  # Predict using the inner model
   preds <- predict(object$inner_fit, newdata = newdata, ...)
+  
+  # Extract numeric vector (SuperLearner returns a list with a $pred matrix)
   if (is.list(preds) && "pred" %in% names(preds)) {
     return(as.numeric(preds$pred))
   }
+  
   return(as.numeric(preds))
-}
-
-#' G-Computation Estimator   sum E(Y | X = x_new, C = C_new)
-#' 
-#' @param out_model An S3 object of class "outcome_model".
-#' @param C Numeric matrix or data frame of observed confounders.
-#' @param X_new Optional numeric matrix or data frame of new treatment values to evaluate. Defaults to NULL.
-#' @return A numeric vector of marginalized expected outcomes.
-
-gcomp <- function(outcome_model, C = NULL, X_new = NULL) {
-  p <- outcome_model$p
-  
-  # Default to observed C if C_new is not provided
-  if (is.null(C)) {
-    C <- outcome_model$C_observed
-  } else {
-    C <- as.data.frame(C)
-    colnames(C) <- outcome_model$C_names
-  }
-  n <- nrow(C)
-  
-  # Default to observed X if X_new is not provided
-  if (is.null(X_new)) {
-    X_new <- outcome_model$X_observed
-  } else {
-    X_new <- as.data.frame(X_new)
-    colnames(X_new) <- outcome_model$X_names
-  }
-  
-  if (ncol(X_new) != p) {
-    stop("X_new must have the same number of columns as the training X.")
-  }
-  m <- nrow(X_new)
-  
-  # Estimate each exposure value over the entire observed confounder distribution 
-  gcomp_est <- vapply(1:m, function(i) {
-    print(i)
-    Xi_new <- X_new[i, , drop = FALSE]
-    
-    # Replicate this treatment assignment for every individual
-    Xi_rep <- Xi_new[rep(1, n), , drop = FALSE]
-    df_new <- cbind(Xi_rep, C)
-    
-    # Predict and take the empirical mean
-    mean(predict(outcome_model, newdata = df_new))
-  }, numeric(1L))
-  
-  names(gcomp_est) <- paste("x", 1:m, sep = "_")
-  return(gcomp_est)
 }
 
 # Define the wrapper

@@ -52,5 +52,5 @@ simulate_data <- function(n,
   # Causal mean (g_C is mean zero)
   mu_X <- h_Z_coef * h_Z
   
-  list(C = C, X = X, Y = Y, mu_X = mu_X, beta = beta, P_beta= P_beta)
+  list(Y = Y, C = C, X = X, mu_X = mu_X, beta = beta, P_beta= P_beta)
 }

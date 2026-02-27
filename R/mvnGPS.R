@@ -74,9 +74,15 @@ mvnGPS <- function(X, C, method = c("linear", "SuperLearner"), ...) {
 predict.mvnGPS <- function(object, newdata, delta_n = 1e-4, ...) {
   newdata_df <- as.data.frame(newdata)
   
+  X_new <- newdata_df[, 1:object$p, drop = FALSE] |> as.matrix()
+  C_new <- newdata_df[, (object$p+1):ncol(newdata_df), drop = FALSE]
+  
+  names(X_new) <- object$X_names
+  names(C_new) <- object$C_names
+  
   # Extract X and C columns
-  X_new <- as.matrix(newdata_df[, object$X_names, drop = FALSE])
-  C_new <- newdata_df[, object$C_names, drop = FALSE]
+  # X_new <- as.matrix(newdata_df[, object$X_names, drop = FALSE])
+  # C_new <- newdata_df[, object$C_names, drop = FALSE]
   
   # 1. Predict the conditional mean vector of X
   if (object$method == "linear") {

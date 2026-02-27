@@ -1,4 +1,4 @@
-#' Estimate Causal Mean using RA, IPW, or DR (Self-Normalized)
+#' Estimate Causal Mean using RA, IPW, or DR (Self-Normalized) from Colangelo and Lee (2025)
 #'
 #' @param Y Numeric vector of observed outcomes (length n).
 #' @param X Numeric matrix or data frame of observed treatments (n x p).
@@ -25,6 +25,10 @@ estimate_ERS <- function(Y, X, C, x_eval = NULL,
   
   estimator <- match.arg(estimator)
   
+  # Capture original names BEFORE coercion
+  orig_X_names <- if(is.matrix(X) || is.data.frame(X)) colnames(X) else NULL
+  orig_C_names <- if(is.matrix(C) || is.data.frame(C)) colnames(C) else NULL
+  
   X_df <- as.data.frame(X)
   C_df <- as.data.frame(C)
   
@@ -36,15 +40,17 @@ estimate_ERS <- function(Y, X, C, x_eval = NULL,
   # ---------------------------------------------------------
   if (estimator %in% c("RA", "DR")) {
     if (is.null(out_model)) stop("An 'out_model' object is required for the RA and DR estimators.")
-    # Safely apply names if missing, otherwise leave user's dataframe intact
-    if (is.null(colnames(X_df)) && !is.null(out_model$X_names)) colnames(X_df) <- out_model$X_names
-    if (is.null(colnames(C_df)) && !is.null(out_model$C_names)) colnames(C_df) <- out_model$C_names
+    
+    # Safely apply names only if the ORIGINAL input lacked them
+    if (is.null(orig_X_names) && !is.null(out_model$X_names)) colnames(X_df) <- out_model$X_names
+    if (is.null(orig_C_names) && !is.null(out_model$C_names)) colnames(C_df) <- out_model$C_names
   }
   
   if (estimator %in% c("IPW", "DR")) {
     if (is.null(gps_model)) stop("A 'gps_model' object is required for the IPW and DR estimators.")
-    if (is.null(colnames(X_df)) && !is.null(gps_model$X_names)) colnames(X_df) <- gps_model$X_names
-    if (is.null(colnames(C_df)) && !is.null(gps_model$C_names)) colnames(C_df) <- gps_model$C_names
+    
+    if (is.null(orig_X_names) && !is.null(gps_model$X_names)) colnames(X_df) <- gps_model$X_names
+    if (is.null(orig_C_names) && !is.null(gps_model$C_names)) colnames(C_df) <- gps_model$C_names
   }
   
   if (estimator == "RA") {
@@ -56,12 +62,18 @@ estimate_ERS <- function(Y, X, C, x_eval = NULL,
     optimize_bw <- FALSE
   }
   
+  # ---------------------------------------------------------
+  # x_eval Setup
+  # ---------------------------------------------------------
   if(is.null(x_eval)){
     x_eval_df <- X_df
   } else {
+    orig_x_eval_names <- if(is.matrix(x_eval) || is.data.frame(x_eval)) colnames(x_eval) else NULL
     x_eval_df <- as.data.frame(x_eval)
     if (ncol(x_eval_df) != p) stop("x_eval must have the same number of columns as the training X.")
-    colnames(x_eval_df) <- colnames(X_df)
+    
+    # Inherit names from X_df if x_eval lacks them
+    if (is.null(orig_x_eval_names)) colnames(x_eval_df) <- colnames(X_df)
   }
   m <- nrow(x_eval_df)
   

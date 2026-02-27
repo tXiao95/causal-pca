@@ -1,4 +1,4 @@
-#' Compute Doubly Robust Pseudo-Outcomes
+#' Compute Doubly Robust Pseudo-Outcomes from Kennedy et al. (2017) JRSS-B
 #'
 #' @param Y Numeric vector of observed outcomes (length n).
 #' @param X Numeric matrix or data frame of observed treatments (n x p).
@@ -9,15 +9,36 @@
 #' @return A numeric vector of pseudo-outcomes (length n).
 
 estimate_pseudo_outcomes <- function(Y, X, C, out_model, gps_model, delta_n = 1e-4) {
-  n <- length(Y)
+  
+  # ---------------------------------------------------------
+  # Input Validation & Safe Column Naming
+  # ---------------------------------------------------------
+  # Capture original names BEFORE coercion
+  orig_X_names <- if(is.matrix(X) || is.data.frame(X)) colnames(X) else NULL
+  orig_C_names <- if(is.matrix(C) || is.data.frame(C)) colnames(C) else NULL
+  
   X_df <- as.data.frame(X)
   C_df <- as.data.frame(C)
+  n <- length(Y)
   
-  # Ensure C and X match the names used during model training
-  colnames(C_df) <- out_model$C_names
-  colnames(X_df) <- out_model$X_names
+  # Safely apply names only if the ORIGINAL input lacked them
+  if (is.null(orig_X_names) && !is.null(out_model$X_names)) colnames(X_df) <- out_model$X_names
+  if (is.null(orig_C_names) && !is.null(out_model$C_names)) colnames(C_df) <- out_model$C_names
   
-  # Main loop: calculate the pseudo-outcome for each individual j
+  # ---------------------------------------------------------
+  # Pre-computations (Batch predicting observed data)
+  # ---------------------------------------------------------
+  df_observed <- cbind(X_df, C_df)
+  
+  # Pre-calculate the "diagonal" elements: m(X_j, C_j) and pi(X_j | C_j)
+  # Doing this outside the loop saves overhead and is much safer
+  m_obs  <- predict(out_model, newdata = df_observed)
+  pi_obs <- predict(gps_model, newdata = df_observed)
+  pi_obs <- pmax(pi_obs, delta_n) # Apply safety flooring to the denominator
+  
+  # ---------------------------------------------------------
+  # Main Loop over Individuals
+  # ---------------------------------------------------------
   pseudo_outcomes <- vapply(1:n, function(j) {
     
     # Create a grid where individual j's treatment is repeated n times,
@@ -26,21 +47,15 @@ estimate_pseudo_outcomes <- function(Y, X, C, out_model, gps_model, delta_n = 1e
     df_grid <- cbind(X_j_rep, C_df)
     
     # Predict m(X_j, C_i) and pi(X_j | C_i) across all i = 1...n
-    m_grid <- predict(out_model, newdata = df_grid)
+    m_grid  <- predict(out_model, newdata = df_grid)
     pi_grid <- predict(gps_model, newdata = df_grid)
     
-    # We also need m(X_j, C_j) and pi(X_j | C_j). 
-    # Because the j-th row of df_grid pairs X_j exactly with C_j, 
-    # these values are simply the j-th elements of the grids we just predicted.
-    m_jj <- m_grid[j]
-    pi_jj <- pmax(pi_grid[j], delta_n) # Apply safety flooring
-    
-    # Calculate the empirical expectations (means) over i=1...n
+    # Calculate the empirical expectations (marginalized over C)
     mean_pi <- mean(pi_grid)
     mean_m  <- mean(m_grid)
     
-    # Assemble the pseudo-outcome xi(O_j)
-    xi_j <- ((Y[j] - m_jj) / pi_jj) * mean_pi + mean_m
+    # Assemble the pseudo-outcome using the pre-computed observed values
+    xi_j <- ((Y[j] - m_obs[j]) / pi_obs[j]) * mean_pi + mean_m
     
     return(xi_j)
     
