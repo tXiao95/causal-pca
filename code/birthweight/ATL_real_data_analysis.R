@@ -1,8 +1,14 @@
 library(data.table)
 library(here)
 
+source(here("R", "csMAVE.R"))
+source(here("R", "misc.R"))
+source(here("R", "outcome_regression.R"))
+source(here("R", "estimate_ERS.R"))
+
 args <- commandArgs(trailingOnly = TRUE)
 N <- as.numeric(args[1])
+N <- 450
 
 # Setup -------------------------------------------------------------------
 
@@ -50,8 +56,9 @@ N <- as.numeric(args[1])
 
 # Analysis ----------------------------------------------------------------
 
+# Other is too small of a group, we discard for convenience. 
 dat_subset <- fread(here("data", "birthweight", "ATL_bw_data.csv"), 
-                    stringsAsFactors = TRUE)
+                    stringsAsFactors = TRUE)[m_race != "Other"]
 
 X_vars <- c("CO", "EC", "NH4", "NO2", "NO3", "NOx", 
             "OC", "O3", "PM10", "PM25", "SO2", "SO4")
@@ -65,7 +72,7 @@ C_vars <- c(
         "alcohol",
         "prev",
         "gestweeks",
-        "county",
+#        "county",
         "BG_POV_LVL"
 )
 
@@ -77,19 +84,24 @@ n <- nrow(dat_subset)
 p <- ncol(X)
 q <- ncol(C)
 
-source(here("R", "csMAVE.R"))
-source(here("R", "estimate_Seff.R"))
-source(here("R", "outcome_regression.R"))
-
 set.seed(12)
 sampled_idx <- sample(1:n, N, replace = FALSE)
 dat_sampled <- dat_subset[sampled_idx,]
 
-SL.lib <- c( 
+# Decide number of SL CV folds based on "Practical Considerations..."
+SL.V <- ifelse(N >= 10000, 2, 
+               ifelse( N >= 5000, 5, 
+                       ifelse( N >=500, 20, 
+                               ifelse(N >= 30, 10, N))))
+
+SL.lib <- c(
             "SL.glmnet",
             "SL.speedglm",
             "SL.xgboost", 
             "SL.earth")
+
+# -1 removes the intercept column which SuperLearner doesn't need
+# Now use X_numeric in your SuperLearner call
 
 # 7 minutes for training
 start_time <- proc.time()
@@ -98,19 +110,26 @@ out_model_X <- outcome_model(Y = dat_sampled$grams,
                              C = dat_sampled[, ..C_vars], 
                              mu_fitter = SL_outcome_fitter, 
                              SL.lib = SL.lib, 
-                             cvControl = list(V = ifelse(N >= 10000, 2, 5)))
+                             cvControl = list(V = SL.V))
 out_model_X_time <- proc.time() - start_time
 
 # I think this gets slower the bigger the model is
 start_time <- proc.time()
-mu_X <- gcomp(out_model_X, C= dat_sampled[, ..C_vars], X_new = dat_sampled[, ..X_vars])
+#mu_X1 <- gcomp(out_model_X, C= dat_sampled[, ..C_vars], X_new = dat_sampled[, ..X_vars])
+mu_X <- estimate_ERS(Y = dat_sampled$grams,
+                     X = dat_sampled[, ..X_vars],
+                     C = dat_sampled[, ..C_vars],
+                     x_eval = dat_sampled[, ..X_vars],
+                     out_model = out_model_X,
+                     estimator = "RA")
+
 gcomp_time <- proc.time() - start_time
 
 dat_sampled$mu_X <- mu_X
 
 form     <- reformulate(X_vars, response = "mu_X")
 start_time <- proc.time()
-mave_fit <- MAVE::mave(form, data = dat_sampled, method = "meanOPG", max.dim = p)
+mave_fit <- MAVE::mave(form, data = dat_sampled, method = "meanMAVE", max.dim = p)
 mave_time <- proc.time() - start_time
 
 start_time <- proc.time()
@@ -140,7 +159,7 @@ out_model_Z <- outcome_model(Y = dat_sampled$grams,
                              C = dat_sampled[, ..C_vars], 
                              mu_fitter = SL_outcome_fitter, 
                              SL.lib = SL.lib, 
-                             cvControl = list(V = ifelse(N >= 10000, 2, 5)))
+                             cvControl =  list(V = SL.V))
 out_model_Z_time <- proc.time() - start_time
 
 obj <- list(dat_sampled = dat_sampled, # Dataset

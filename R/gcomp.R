@@ -22,6 +22,7 @@ gcomp <- function(Y, X, C, X.new = NULL, ...) {
   
   # Estimate each exposure value over entire confounder distribution 
   gcomp_est <- vapply(1:m, function(i){
+    print(i)
     Xi.new <- X.new[i, , drop = FALSE]
     df.new <- cbind(Xi.new[rep(1, n), , drop = FALSE], C)
     mean( predict(sl_fit, newdata = df.new)$pred )

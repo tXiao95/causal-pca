@@ -3,22 +3,6 @@ library(MASS) # For ginv
 library(Rcpp)
 library(RcppArmadillo) # Ensure this is loaded
 
-# Helper ------------------------------------------------------------------
-
-# Computes the projection matrix Pi(beta)
-Pi <- function(beta) {
-  beta %*% solve(t(beta) %*% beta) %*% t(beta)
-}
-
-Delta <- function(beta1, beta2, type = "F"){
-  Pi1 <- Pi(beta1)
-  Pi2 <- Pi(beta2)
-  
-  return( norm(Pi1 - Pi2, type = type) )
-}
-
-# Nuisances ---------------------------------------------------------------
-
 # estimate_m_gradient_cpp
 # Careful! This function only takes a matrix object X (no data.frame), and it cannot have column names
 cppFunction('

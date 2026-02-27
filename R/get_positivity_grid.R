@@ -53,7 +53,7 @@ get_convex_positivity_grid <- function(data, percentile = 0, n_points = 10) {
   return(grid_points[is_inside, , drop = FALSE])
 }
 
-get_kde_positivity_grid <- function(data, percentile = 0, n_points = 20, threshold = 0.05) {
+get_kde_positivity_grid <- function(data, percentile = 0, n_points = 20, threshold = 0.05, bw_selection = c("silverman", "plugin")) {
   data <- as.matrix(data)
   
   # 1. Create the base rectangular grid using percentiles
@@ -69,7 +69,15 @@ get_kde_positivity_grid <- function(data, percentile = 0, n_points = 20, thresho
   
   # 2. Perform Kernel Density Estimation (KDE)
   # Hpi is a plug-in bandwidth selector—it determines how "tight" the fit is.
-  H_mat <- ks::Hpi(x = data)
+  #H_mat <- ks::Hscv(x = data)
+  # Replace ks::Hpi(x = data) with:
+  if(bw_selection == "silverman"){
+    H_mat <- diag(apply(data, 2, sd) * (4/(ncol(data)+2)/nrow(data))^(1/(ncol(data)+4)))
+  } else if(bw_selection == "plugin"){
+    H_mat <- ks::Hpi(x = data)
+  }else{
+    stop("Please select a valid 'bw_selection' argument from 'silverman' or 'plugin'")
+  }
   fhat <- ks::kde(x = data, H = H_mat)
   
   # 3. Calculate density for our grid points vs. actual data

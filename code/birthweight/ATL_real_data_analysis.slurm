@@ -4,7 +4,7 @@
 #SBATCH --mail-user=thsiao3@emory.edu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --mem=100GB
+#SBATCH --mem=150GB
 #SBATCH --time=168:00:00
 #SBATCH --partition=chang,week-long-cpu
 #SBATCH --output=/scratch/%u/output/RDA_BW_%j.log
