@@ -1,7 +1,7 @@
 library(testthat)
 library(MASS)
 
-source("R/estimate_Seff.R")
+source("R/Seff.R")
 
 # -------------------------------------------------------------------
 # Assuming estimate_m_gradient_cpp is already compiled and in your environment
