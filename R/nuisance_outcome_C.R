@@ -74,6 +74,6 @@ predict.nuisance_C_model <- function(object, newdata, ...) {
 }
 
 # Define the wrapper for SuperLearner
-SL_nuisance_fitter <- function(target, C_df, ...) {
-  SuperLearner::SuperLearner(Y = target, X = C_df, family = gaussian(), ...)
+SL_nuisance_fitter <- function(target, C_df, SL.lib = c("SL.glm", "SL.glmnet", "SL.xgboost", "SL.earth"), ...) {
+  SuperLearner::SuperLearner(Y = target, X = C_df, family = gaussian(), SL.lib = SL.lib, ...)
 }

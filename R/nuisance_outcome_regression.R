@@ -87,6 +87,6 @@ predict.outcome_model <- function(object, newdata, ...) {
 }
 
 # Define the wrapper
-SL_outcome_fitter <- function(Y, XC_df, ...) {
-  SuperLearner::SuperLearner(Y = Y, X = XC_df, family = gaussian(), ...)
+SL_outcome_fitter <- function(Y, XC_df, SL.lib = c("SL.glm", "SL.glmnet", "SL.xgboost", "SL.earth"), ...) {
+  SuperLearner::SuperLearner(Y = Y, X = XC_df, family = gaussian(), SL.lib = SL.lib, ...)
 }
