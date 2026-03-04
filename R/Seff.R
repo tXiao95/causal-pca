@@ -176,7 +176,7 @@ compute_efficient_score_and_update <- function(X, Y, beta, b, h, SL = FALSE, sig
 }
 
 # Main iterative loop (No QR decomposition inside the loop)
-run_efficient_estimator <- function(X, Y, beta_init, b=NULL, h=NULL, max_iters = 100, SL = FALSE, sigma2 = NULL, alpha = 1, threshold = NULL) {
+run_efficient_estimator <- function(X, Y, beta_init, b=NULL, h=NULL, max_iters = 10, SL = FALSE, sigma2 = NULL, alpha = 1, threshold = NULL) {
   n <- nrow(X)
   p <- ncol(X)
   d <- ncol(beta_init)
