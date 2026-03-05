@@ -201,7 +201,7 @@ estimate_pseudo_outcomes <- function(Y, X, C, out_model, gps_model, delta_n = 1e
   # Main Loop over Individuals (Hyper-Optimized)
   # ---------------------------------------------------------
   pseudo_outcomes <- vapply(1:n, function(j) {
-    message(j)
+    message("Evaluating pseudo-outcome row ", j)
     
     # ZERO-COPY IN-PLACE UPDATE:
     # Instead of `rep()` and `cbind()`, we instantly overwrite the memory 

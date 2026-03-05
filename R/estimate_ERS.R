@@ -131,6 +131,7 @@ estimate_ERS <- function(Y, X, C, x_eval = NULL,
   # Main Loop over Target Treatment Values
   # ---------------------------------------------------------
   loop_out <- lapply(1:m, function(i) {
+    message("Evaluating ERS row ", i)
     x_target <- as.numeric(x_eval_df[i, ])
     
     # Prepare dynamic bandwidth output vector

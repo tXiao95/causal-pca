@@ -156,11 +156,11 @@ simulate_causal_sdr <- function(n = 1000,
                                 q = 5,
                                 rho_X = 0.7,
                                 causal_conf_strength = 1.0,   # Keeps Z bounded in [-3, 3] grid
-                                spurious_strength = 6.0,      # Keeps the MAVE trap strong
+                                spurious_strength = 2.0,      # Keeps the MAVE trap strong
                                 var_scale = 5,                # Keeps the PCA trap strong
                                 signal_multiplier = 2.0,      # Knob 1: ERS Signal strength
                                 noise_sd = 0.5,               # Knob 2: Noise strength (SNR control)
-                                interaction_coef = 1,
+                                interaction_coef = 10,
                                 heteroskedastic = FALSE) {
   
   if (p < 7) stop("p must be >= 7 to accommodate causal, spurious, and noise directions.")
@@ -218,7 +218,8 @@ simulate_causal_sdr <- function(n = 1000,
   
   # Interaction
   C_interact <- if(q >= 3) C[, 3] else C[, 1]
-  interaction_term <- interaction_coef * Z[, 1] * C_interact
+  #interaction_term <- interaction_coef * Z[, 1] * C_interact
+  interaction_term <- interaction_coef * ( X[,5] + X[,6] + Z[,1] ) * C_interact
   
   # Variance of Y 
   if (heteroskedastic) {

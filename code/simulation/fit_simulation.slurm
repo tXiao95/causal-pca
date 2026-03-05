@@ -1,14 +1,17 @@
 #!/bin/bash
 
+#SBATCH --job-name=sim_CSDR
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=800M
-#SBATCH --time=12:00:00
-#SBATCH --array=1-500
-#SBATCH --partition=chang,day-long-cpu
-#SBATCH --output=/scratch/thsiao3/output/fit_sim_%A_%a.out
-#SBATCH --error=/scratch/thsiao3/error/fit_sim_%A_%a.err
+#SBATCH --mem-per-cpu=500M
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=thsiao3@emory.edu
+#SBATCH --time=24:00:00
+#SBATCH --array=1-100
+#SBATCH --partition=short-cpu,chang,day-long-cpu,week-long-cpu
+#SBATCH --output=/scratch/thsiao3/output/sim_CSDR_%A_%a.out
+#SBATCH --error=/scratch/thsiao3/error/sim_CSDR_%A_%a.err
 
 # Load necessary modules or set any other environment variables if needed
 module load singularity

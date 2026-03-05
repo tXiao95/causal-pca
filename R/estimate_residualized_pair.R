@@ -78,6 +78,7 @@ train_nuisance_models <- function(Y, X, C, fitter, ...) {
   # Train E[X_i|C] for all p dimensions
   X_models <- vector("list", p)
   for (i in 1:p) {
+    message("Training Model X", i, "|C")
     X_models[[i]] <- nuisance_C_model(target = X_df[, i], C = C_df, fitter = fitter, ...)
   }
   
