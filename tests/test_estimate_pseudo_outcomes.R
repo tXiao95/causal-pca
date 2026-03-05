@@ -120,7 +120,7 @@ test_that("estimate_pseudo_outcomes integrates flawlessly with actual nuisance m
   # 1. Setup Data
   # ---------------------------------------------------------
   set.seed(123)
-  n <- 100
+  n <- 5000
   p <- 2
   q <- 2
   
@@ -148,7 +148,7 @@ test_that("estimate_pseudo_outcomes integrates flawlessly with actual nuisance m
                              X = X, 
                              C = C, 
                              mu_fitter = SL_outcome_fitter, 
-                             SL.library = "SL.glm")
+                             SL.lib = "SL.glm")
   })
   
   # Fit Propensity Score Density f(X | C) using the new gps_model gateway
@@ -160,13 +160,12 @@ test_that("estimate_pseudo_outcomes integrates flawlessly with actual nuisance m
   # ---------------------------------------------------------
   # 3. Compute Pseudo-Outcomes
   # ---------------------------------------------------------
-  
   pseudo_outcomes <- estimate_pseudo_outcomes(Y = Y, 
                                               X = X, 
                                               C = C, 
                                               out_model = out_mod, 
                                               gps_model = gps_mod)
-  
+    
   # ---------------------------------------------------------
   # 4. Assertions
   # ---------------------------------------------------------
