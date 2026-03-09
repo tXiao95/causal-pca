@@ -1,4 +1,5 @@
 library(SuperLearner)
+library(torch)
 
 #' Fit a Global Outcome Regression Object E[Y | X, C]
 #' 
@@ -89,4 +90,80 @@ predict.outcome_model <- function(object, newdata, ...) {
 # Define the wrapper
 SL_outcome_fitter <- function(Y, XC_df, SL.lib = c("SL.glm", "SL.glmnet", "SL.xgboost", "SL.earth"), ...) {
   SuperLearner::SuperLearner(Y = Y, X = XC_df, family = gaussian(), SL.lib = SL.lib, ...)
+}
+
+# Neural Network ----------------------------------------------------------
+
+torch_set_num_threads(1)
+
+nn_outcome_fitter <- function(Y, XC_df, epochs = 150, lr = 0.005, seed = NULL, ...) {
+  
+  # ENFORCE REPRODUCIBILITY: Use the simulation iteration seed if provided
+  if (!is.null(seed)) {
+    torch_manual_seed(seed)
+  }
+  
+  X_mat <- as.matrix(XC_df)
+  Y_mat <- matrix(Y, ncol = 1)
+  
+  # Scaling parameters
+  x_means <- colMeans(X_mat)
+  x_sds   <- apply(X_mat, 2, sd)
+  x_sds[x_sds == 0] <- 1 # Safety catch
+  
+  X_scaled <- scale(X_mat, center = x_means, scale = x_sds)
+  
+  x_tensor <- torch_tensor(X_scaled, dtype = torch_float())
+  y_tensor <- torch_tensor(Y_mat, dtype = torch_float())
+  
+  # Architecture: 100x50 with SiLU
+  model <- nn_sequential(
+    nn_linear(ncol(X_mat), 100),
+    nn_silu(),
+    nn_linear(100, 50),
+    nn_silu(),
+    nn_linear(50, 1)
+  )
+  
+  optimizer <- optim_adam(model$parameters, lr = lr)
+  scheduler <- lr_step(optimizer, step_size = 50, gamma = 0.5)
+  criterion <- nn_mse_loss()
+  
+  # Training Loop
+  model$train()
+  for (epoch in 1:epochs) {
+    optimizer$zero_grad()
+    output <- model(x_tensor)
+    loss <- criterion(output, y_tensor)
+    loss$backward()
+    optimizer$step()
+    scheduler$step()
+  }
+  
+  res <- list(model = model, x_means = x_means, x_sds = x_sds)
+  class(res) <- "nn_fit"
+  return(res)
+}
+
+predict.nn_fit <- function(object, newdata, ...) {
+  object$model$eval()
+  
+  X_mat <- as.matrix(newdata)
+  X_scaled <- scale(X_mat, center = object$x_means, scale = object$x_sds)
+  x_tensor <- torch_tensor(X_scaled, dtype = torch_float())
+  
+  with_no_grad({
+    preds <- object$model(x_tensor)
+    out <- as.numeric(preds)
+  })
+  
+  # EXPLICIT CLEANUP: Destroy the C++ tensors to prevent memory leaks
+  rm(x_tensor, preds)
+  
+  return(out)
+}
+
+NN_outcome_fitter <- function(Y, XC_df, ...) {
+  # Passes any ... arguments (like seed) down to nn_outcome_fitter
+  nn_outcome_fitter(Y, XC_df, epochs = 150, lr = 0.005, ...)
 }

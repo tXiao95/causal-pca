@@ -96,6 +96,8 @@ crossfit_ERS <- function(Y, X, C, x_eval = NULL,
         m_target_mat[test_idx, j] <- predict(out_mod, newdata = dt_grid)
       }
     }
+    # Clearing memory for nnet
+    gc(verbose = FALSE)
   }
   
   # ---------------------------------------------------------
