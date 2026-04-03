@@ -305,6 +305,11 @@ plot_ers_pointwise <- function(dt_ers, dt_true_z, metric = c("bias", "rmse", "co
   # Step 2: Merge the true Z coordinates based on the eval_id (1 to 100)
   dt_pointwise <- merge(dt_pointwise, dt_true_z, by = "eval_id", all.x = TRUE)
   
+  # Save to disk
+  out_dir <- here("results/jasa-initial-submission", NAME, EXPERIMENT)
+  if(!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+  fwrite(dt_pointwise, here(out_dir, "ers_table.csv"))
+  
   # Step 3: Build the ggplot
   p <- ggplot(dt_pointwise, aes(x = Z1_true, y = Z2_true)) +
     facet_grid(n_str ~ method) +
@@ -340,8 +345,8 @@ plot_ers_pointwise <- function(dt_ers, dt_true_z, metric = c("bias", "rmse", "co
         colours = c("firebrick", "gray90", "dodgerblue"),
         values = c(0, 0.95, 1), # Anchors the gray90 exactly at 0.95
         limits = c(0, 1),
-        breaks = c(0, 0.50, 0.80, 0.95, 1.0),
-        labels = c("0.0", "0.5", "0.8", "0.95 (Target)", "1.0"),
+        breaks = c(0, 0.50, 0.80, 0.95),
+        labels = c("0.0", "0.5", "0.8", "0.95"),
         name = "Coverage"
       ) +
       ggtitle("Point-Wise 95% CI Coverage across the True 2D Causal Subspace")
@@ -417,13 +422,16 @@ main <- function(){
   message("Reconstructing true Z grid for EXPERIMENT: ", EXPERIMENT)
   set.seed(99999) # The exact hardcoded seed used in fit_simulation.R
   
-  is_weak <- (EXPERIMENT == "weak_dim")
-  int_coef <- if(EXPERIMENT == "additive") 0.0 else 5.0
+  is_weak   <- (EXPERIMENT == "weak_dim")
+  int_coef  <- if(EXPERIMENT == "additive") 0.0 else 5.0
+  is_sparse <- if(NAME == "main_paper_final_results_nnet") TRUE else FALSE
   
   # Calling the DGP perfectly reconstructs the grid
   sim_grid <- simulate_causal_sdr_simple(n = 100, p = 10, q = 5, noise_sd = 0.5, 
-                                         rho_X = 0.8, interaction_coef = int_coef, 
-                                         weak_dim_signal = is_weak)
+                                         rho_X = 0.8, 
+                                         interaction_coef = int_coef, 
+                                         weak_dim_signal = is_weak, 
+                                         sparse = is_sparse)
   
   dt_true_z <- data.table(
     eval_id = 1:100, 
@@ -490,7 +498,8 @@ main <- function(){
 
 # Main code ---------------------------------------------------------------
 if(interactive()){
-  NAME       <- "nnet_nonsparse"
+  #NAME       <- "main_paper_final_results_nonsparse_nnet_128x64x32"
+  NAME       <- "main_paper_final_results_nnet"
   EXPERIMENT <- "interaction"
 } else{
   NAME       <- as.character( commandArgs(trailingOnly = TRUE)[1] )

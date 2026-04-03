@@ -19,41 +19,36 @@ source(here("R/nuisance_outcome_C.R"))
 source(here("R/nuisance_gps.R"))
 
 source(here("R/misc.R"))
-source(here("R/sims_from_papers.R"))
+source(here("R/simulate_old_papers.R"))
 source(here("R/simulate_data.R"))
+source(here("R/simulate_pfas_birthweight.R"))
 
 # -------------------------------------------------------------------------
 # Well-Specified Fitters for simulate_causal_sdr DGP
 # -------------------------------------------------------------------------
 
 # 1. Outcome Regression: E[Y | X, C]
-well_specified_outcome_fitter <- function(Y, XC_df, ...) {
+SL_fitter_simple <- function(Y, XC_df, ...) {
   SL_outcome_fitter(Y, XC_df, SL.lib = c("SL.glm", "SL.glmnet", "SL.earth"), ...)
 }
 
-DR_outcome_fitter <- function(Y, XC_df, ...) {
-  SL_outcome_fitter(Y, XC_df, SL.lib = c("SL.glm", "SL.glmnet", "SL.earth", "SL.gam",
+SL_fitter <- function(Y, XC_df, ...) {
+  SL_outcome_fitter(Y, XC_df, SL.lib = c("SL.glm", "SL.glmnet", 
+                                         "SL.earth", "SL.gam",
                                          "SL.ranger", "SL.xgboost"), ...)
 }
 
-# New approach:
+# DR_outcome_fitter <- function(Y, XC_df, ...) {
+#    nn_outcome_fitter(Y, XC_df, arch = "100_50", epochs = 150, lr = 0.05, ...)
+# }
+
 DR_outcome_fitter <- function(Y, XC_df, ...) {
-  # You can tweak epochs and lr depending on how noisy your simulated data is
-  nn_outcome_fitter(Y, XC_df, epochs = 150, lr = 0.05, ...)
+   nn_outcome_fitter(Y, XC_df, arch = "128_64_32", epochs = 1000, lr = 0.01, ...)
 }
 
 # 2. GPS Model: f(X | C)
-# The DGP strictly generates X | C as a multivariate normal with a linear mean.
-# A linear MVN model is perfectly specified and lightning fast.
 well_specified_gps_fitter <- function(X, C, ...) {
   mvn_fitter(X, C, method_gps = "linear", ...)
-}
-
-# 3. C_fitter: E[Y | C] and E[X | C]
-# E[X|C] is linear, but E[Y|C] is non-linear after marginalizing over X.
-# Including SL.glm and SL.earth allows the ensemble to adapt appropriately.
-well_specified_C_fitter <- function(target, C_df, ...) {
-  SL_nuisance_fitter(target, C_df, SL.lib = c("SL.glm", "SL.glmnet", "SL.earth"), ...)
 }
 
 # -------------------------------------------------------------------------
@@ -61,7 +56,6 @@ well_specified_C_fitter <- function(target, C_df, ...) {
 # -------------------------------------------------------------------------
 
 evaluate_method_group <- function(group, sim, n, task_id, x_eval_fixed, mu_true_fixed) {
-  
   Y <- sim$Y; X <- sim$X; C <- sim$C
   beta0 <- sim$beta_true
   d0 <- sim$d
@@ -109,6 +103,8 @@ evaluate_method_group <- function(group, sim, n, task_id, x_eval_fixed, mu_true_
         crossfit_ERS(Y = Y, X = Z_train, C = C, x_eval = z_eval, 
                      estimator = "DR", L = 5, optimize_bw = TRUE,
                      outcome_fitter = DR_outcome_fitter,
+                     #outcome_fitter = SL_fitter_simple,
+                     #outcome_fitter = SL_fitter,
                      gps_fitter = well_specified_gps_fitter)
       })
     }, error = function(e) NULL)
@@ -165,7 +161,8 @@ evaluate_method_group <- function(group, sim, n, task_id, x_eval_fixed, mu_true_
     
     t_cre <- system.time({
       cre_obj <- compute_new_response_and_exposure(Y = Y, X = X, C = C, method = causal_methods, L = 5,
-                                                   #outcome_fitter = well_specified_outcome_fitter,
+                                                   #outcome_fitter = SL_fitter_simple,
+                                                   #outcome_fitter = SL_fitter,
                                                    outcome_fitter = DR_outcome_fitter,
                                                    gps_fitter = well_specified_gps_fitter)
     })
@@ -193,7 +190,8 @@ evaluate_method_group <- function(group, sim, n, task_id, x_eval_fixed, mu_true_
     t_cre <- system.time({
       cre_obj <- compute_new_response_and_exposure(Y = Y, X = X, C = C, method = "RP", L = 5,
                                                    #C_fitter = well_specified_C_fitter)
-                                                   C_fitter = DR_outcome_fitter)
+                                                   #C_fitter = DR_outcome_fitter)
+                                                   C_fitter = SL_fitter_simple)
     })
     
     new_X <- cre_obj$new_X; new_Y <- cre_obj$new_Y
@@ -244,10 +242,9 @@ main <- function() {
   message("Experiment: ", EXPERIMENT)
   
   N_vector <- c(100, 500, 1000, 2500, 5000)
-  #N_vector <- c(100)
-  groups   <- c("Base", "RA_DR_PO", "RP", "Oracle")
-  #N_vector <- c(500)
-  #groups   <- c("Base")
+  #N_vector <- c(303, 500, 1000)
+  #groups   <- c("Base", "RA_DR_PO", "RP", "Oracle")
+  groups   <- c("Base", "RA_DR_PO", "Oracle")
   
   # -------------------------------------------------------------------
   # Generate a Fixed, 100-Point Evaluation Grid
@@ -258,12 +255,21 @@ main <- function() {
   # across ALL tasks, ALL sample sizes, and ALL methods.
   set.seed(99999)
   
-  is_weak <- (EXPERIMENT == "weak_dim")
-  int_coef <- if(EXPERIMENT == "additive") 0.0 else 5.0
+  is_weak   <- (EXPERIMENT == "weak_dim")
+  int_coef  <- if(EXPERIMENT == "additive") 0.0 else 5.0  #(MAIN EXPERIMENT)
+  is_sparse <- if(NAME == "main_paper_final_results_nnet") TRUE else FALSE
   
+  #int_coef <- if(EXPERIMENT == "additive") 0.0 else 10.0   #(PFAS EXPERIMENT)
+  #int_coef <- if(EXPERIMENT == "additive") 0.0 else 200.0   #(PFAS EXPERIMENT)
+  
+  # MAIN EXPERIMENT
   sim_grid <- simulate_causal_sdr_simple(n = 100, p = 10, q = 5, noise_sd = 0.5, 
-                                         rho_X = 0.8, interaction_coef = int_coef, 
-                                         weak_dim_signal = is_weak)
+                                         rho_X = 0.8, 
+                                         interaction_coef = int_coef, 
+                                         weak_dim_signal = is_weak,
+                                         sparse = is_sparse)
+  
+  #sim_grid <- simulate_pfas_birthweight(n = 100, interaction_coef = int_coef)
   
   x_eval_fixed  <- sim_grid$X
   mu_true_fixed <- sim_grid$mu_X
@@ -278,8 +284,14 @@ main <- function() {
     # across the SLURM array, while retaining reproducibility.
     set.seed(TASK_ID)
     
+    # MAIN EXPERIMENT
     sim <- simulate_causal_sdr_simple(n = n, p = 10, q = 5, noise_sd = 0.5, rho_X = 0.8,
-                                      interaction_coef = int_coef, weak_dim_signal = is_weak) 
+                                      interaction_coef = int_coef, 
+                                      weak_dim_signal = is_weak,
+                                      sparse = is_sparse) 
+    
+    # PFAS EXPERIMENT
+    #sim <- simulate_pfas_birthweight(n = n, interaction_coef = int_coef)
     
     # Run the families in parallel
     res_list <- mclapply(groups, function(g) {
@@ -317,7 +329,7 @@ main <- function() {
 if(interactive()){
   TASK_ID    <- 2
   N_CORES    <- 1
-  NAME       <- "nnet_nonsparse"
+  NAME       <- "pfas"
   EXPERIMENT <- "interaction"
 } else{
   TASK_ID    <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))

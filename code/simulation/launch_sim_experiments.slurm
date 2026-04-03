@@ -1,8 +1,10 @@
 #!/bin/bash
 
 # Define the experiments
-NAME="nnet_nonsparse"
-EXPERIMENTS=("interaction" "additive")
+#NAME="final_results_nonsparse_SL_earth_nnet_100x50"   
+NAME="final_results_nonsparse_nnet_128x64x32"   
+EXPERIMENTS=("interaction")
+#EXPERIMENTS=("interaction" "additive")
 #EXPERIMENTS=("interaction" "additive" "weak_dim")
 #EXPERIMENTS=("additive" "weak_dim")
 #EXPERIMENTS=("weak_dim")
