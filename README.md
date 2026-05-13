@@ -8,13 +8,13 @@ Many existing methods for environmental mixtures possess important limitations:
 
 | Method | Flexible Estimation | Interpretable | Causally Valid | Scalable |
 |---|---|---|---|---|
-| BKMR | ✓ | ✗ | Partial | ✗ |
-| WQS | ✗ | ✓ | Partial | ✓ |
+| BKMR | ✓ | ✗ | ✗ | ✗ |
+| WQS | ✗ | ✓ | ✗ | ✓ |
 | Quantile g-computation | ✗ | ✓ | ✓ | ✓ |
 | Principal components pursuit | Partial | Partial | ✗ | ✓ |
 | Proposed causal SDR | ✓ | ✓ | ✓ | ✓ |
 
-To address these limitations, we develop **causal sufficient dimension reduction (causal SDR)**, a framework for estimating low-dimensional representations of multiple continuous exposures that preserve the causal exposure-response surface (ERS).
+To address these limitations, we develop **causal sufficient dimension reduction (causal SDR)**, a framework for estimating low-dimensional representations of multiple continuous exposures that preserve the causal exposure-response surface (ERS). The output is essentially a causal PCA, where the principal components instead of chasing variance respect the underlying causal structure. 
 
 Building on classical sufficient dimension reduction (SDR) methodology, we define a **causal central mean subspace (CCMS)** as the smallest subspace that preserves the causal mean exposure-response function under standard causal identification assumptions.
 
@@ -38,13 +38,14 @@ Our theoretical and simulation results establish that:
 - the convergence rate depends on the quality of pseudo-outcome estimation, and
 - downstream inference based on the reduced exposure is asymptotically equivalent to the oracle setting where the reduction is known.
 
-![](results/jasa-initial-submission/main_paper_final_results_nnet/interaction/plot_pw_coverage_main_paper.pdf)
+![](results/jasa-initial-submission/main_paper_final_results_nnet/interaction/Simulation_Coverage.png)
+
 
 ## Real Data Application
 
 We apply the proposed causal SDR framework to a four-component PFAS mixture to study associations with infant birthweight in a cohort of 305 African-American mothers from the ATL-AA study. The analysis demonstrates how causal SDR can improve both interpretability of exposure mixtures and statistical efficiency in environmental mixture analyses. We additionally compare results with those of BKMR and qgcomp. 
 
-![](results/jasa-initial-submission/ATL-AA/ers_causal_no_title_main_paper.pdf)
+![](results/jasa-initial-submission/ATL-AA/ERS.png)
 
 ---
 
@@ -63,14 +64,6 @@ Within `results/`:
 
 - `final_results_nnet/` contains the primary results reported in the manuscript.
 - `main_paper_final_results_SL_xgboost/` and `main_paper_final_results_nonsparse_nnet_128x64x32/` correspond to supplementary analyses reported in the supplement.
-
----
-
-# Data Availability
-
-The ATL-AA cohort data used in this study cannot be publicly shared due to privacy, ethical, and/or data use agreement restrictions.
-
-This repository therefore contains code and documentation necessary to reproduce the analyses conditional on authorized access to the underlying data.
 
 ---
 
