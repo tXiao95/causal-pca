@@ -2,6 +2,18 @@ library(data.table)
 library(ggplot2)
 library(here)
 library(readxl)
+library(qgcomp)
+library(bkmr)
+library(pcpr)
+library(SuperLearner)
+library(MAVE)
+library(torch) # Required for the Neural Network
+
+# Ensure you have all wrappers sourced
+source(here("R/nuisance_outcome_regression.R")) 
+source(here("R/nuisance_gps.R")) # Contains mvn_fitter
+source(here("R/crossfit_ERS.R")) # Contains crossfit_ERS
+source(here("R/estimate_ERS.R"))
 
 X_path <- here("data/ATL-AA/ATL_AA_PFAS_N=532_two_visits.csv")
 C_path <- here("data/ATL-AA/MPTB_AA Cohort Data_N766, clean, DEidentified, data dictionary_12.5.2025.xlsx")
@@ -58,14 +70,6 @@ dat <- dat[, .(PFOS, PFOA, PFNA, PFHXS,
                age, bmi, edu, tobacco, marijuana, sex, birth_weight)]
 
 # Setup & Libraries -------------------------------------------------------
-library(SuperLearner)
-library(MAVE)
-library(torch) # Required for the Neural Network
-
-# Ensure you have all wrappers sourced
-source(here("R/nuisance_outcome_regression.R")) 
-source(here("R/nuisance_gps.R")) # Contains mvn_fitter
-source(here("R/crossfit_ERS.R")) # Contains crossfit_ERS
 
 X_vars <- c("PFOS", "PFOA", "PFNA", "PFHXS")
 C_vars <- c("age", "bmi", "edu", "tobacco", "marijuana", "sex")
@@ -73,6 +77,146 @@ Y_var  <- "birth_weight"
 
 p <- length(X_vars)
 n <- nrow(dat)
+
+# Other methods -----------------------------------------------------------
+# 2. Matrix Preparation for BKMR and PCPR ---------------------------------
+
+# Convert to standard data.frame for safer formula/matrix parsing
+dat_df <- as.data.frame(dat)
+
+# Exposures matrix (Z)
+Z_mat <- as.matrix(dat_df[, X_vars])
+
+# Outcome vector (Y)
+Y_vec <- dat_df[[Y_var]]
+
+# Covariates matrix (X_mat)
+# model.matrix creates the necessary dummy variables for your factors (edu, tobacco, etc.)
+# We use [,-1] to drop the intercept column since the models fit their own intercept
+formula_C <- as.formula(paste("~", paste(C_vars, collapse = " + ")))
+C_mat <- model.matrix(formula_C, data = dat_df)[, -1]
+
+
+# 3. Quantile G-Computation (qgcomp) --------------------------------------
+cat("\nRunning qgcomp...\n")
+
+formula_full <- as.formula(
+  paste("birth_weight ~", paste(c(X_vars, C_vars), collapse = " + "))
+)
+
+set.seed(123)
+qgcomp_fit <- qgcomp.noboot(
+  f = formula_full,
+  expnms = X_vars,
+  data = dat_df,
+  family = gaussian(),
+  q = 4 # Quartiles
+)
+
+print(summary(qgcomp_fit))
+plot(qgcomp_fit)
+
+
+set.seed(123)
+qgcomp_curve_fit <- qgcomp.boot(
+  f = formula_full,
+  expnms = X_vars,
+  data = dat_df,
+  family = gaussian(),
+  q = 4,
+  B = 500,
+  degree = 3   # degree = 2 allows for a quadratic (curved) dose-response shape
+)
+
+# Plot the curved dose-response line
+plot(qgcomp_curve_fit)
+
+ggsave(here("results/jasa-initial-submission/ATL-AA/qgcomp.pdf"),
+  width = 7.2, 
+  height = 3.2, 
+  dpi = 300
+)
+
+# 4. Bayesian Kernel Machine Regression (bkmr) ----------------------------
+cat("\nRunning bkmr (this may take a while)...\n")
+
+set.seed(123)
+bkmr_fit <- kmbayes(
+  y = Y_vec,
+  Z = Z_mat,
+  X = C_mat,
+  iter = 10000, 
+  family = "gaussian",
+  varsel = TRUE # Enables calculation of Posterior Inclusion Probabilities (PIPs)
+)
+
+# BKMR Diagnostics and Outputs
+TracePlot(fit = bkmr_fit, par = "beta")
+TracePlot(fit = bkmr_fit, par = "r")
+TracePlot(fit = bkmr_fit, par = "sigsq.eps")
+
+pips <- ExtractPIPs(bkmr_fit)
+print(pips)
+# Example plot: Univariate predictor-response functions
+# Your existing base plot
+pred_resp <- PredictorResponseUnivar(fit = bkmr_fit)
+
+ggplot(pred_resp, aes(z, est, ymin = est - 1.96*se, ymax = est + 1.96*se)) + 
+  geom_smooth(stat = "identity") + 
+  facet_wrap(~ variable, scales = "free_x") + # 'free_x' allows each chemical to have its own x-axis range
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7) + 
+  theme_bw() +
+  # Add your clean, descriptive labels here
+  labs(
+    x = "Log2-Transformed PFAS Concentration",
+    y = "Estimated Change in Birth Weight (g)"
+  )
+
+ggsave(here("results/jasa-initial-submission/ATL-AA/bkmr_univariate.pdf"),
+       width = 7.2, 
+       height = 4.2, 
+       dpi = 300
+)
+
+# Code to check overall mixture effect
+risks.overall <- OverallRiskSummaries(fit = bkmr_fit, 
+                                      y = Y_vec, 
+                                      Z = Z_mat, 
+                                      X = C_mat, 
+                                      qs = seq(0, 1, by = 0.005), 
+                                      q.fixed = 0.5)
+risks.overall
+
+ggplot(risks.overall, aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) + 
+  geom_pointrange() + 
+  theme_bw()
+
+ggplot(risks.overall, aes(x = quantile, y = est)) + 
+  # Add a reference line at zero for easy interpretation
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.7) +
+  
+  # geom_ribbon creates the shaded uncertainty band. 
+  # alpha = 0.2 makes it transparent so you can see the grid behind it.
+  # Note: mapping ymin and ymax must be inside an aes() call.
+  geom_ribbon(aes(ymin = est - 1.96*sd, ymax = est + 1.96*sd), fill = "black", alpha = 0.2) + 
+  
+  # geom_line draws the main estimate curve
+  geom_line(size = 1, color = "black") + 
+  
+  theme_bw() +
+  labs(
+    x = "Joint PFAS Quantile",
+    y = "Expected Difference in Birth Weight (vs. Median)"
+  )
+
+ggsave(here("results/jasa-initial-submission/ATL-AA/bkmr_diff.pdf"),
+       width = 7.2, 
+       height = 4.2, 
+       dpi = 300
+)
+
+# CSDR --------------------------------------------------------------------
+
 
 # 2. Fit the Global Outcome Model E[Y | X, C]
 # We use SuperLearner to flexibly model the outcome surface
@@ -86,7 +230,7 @@ out_model_X <- outcome_model(
   C = dat[, ..C_vars], 
   mu_fitter = SL_outcome_fitter, 
   SL.lib = SL.lib,
-  cvControl = list(V = 10) # 5-fold CV for SuperLearner
+  cvControl = list(V = 10) 
 )
 
 # 3. Estimate Pseudo-Outcomes
@@ -134,39 +278,19 @@ dat[, (Z_vars) := as.data.table(Z)]
 # 6. Final Causal Evaluation on Z using Cross-Fitting and DR
 message("Estimating final causal dose-response curve with cross-fitting (L=5)...")
 
-if (d_assoc == 1) {
+if (d == 1) {
   # Standard 1D grid
-  z_assoc_grid_vals <- seq(quantile(dat$Z_assoc1, 0.05), quantile(dat$Z_assoc1, 0.95), length.out = 50)
-  z_assoc_eval_df <- data.frame(Z_assoc1 = z_assoc_grid_vals)
+  z_grid_vals <- seq(quantile(dat$Z1, 0.001), quantile(dat$Z1, 0.95), length.out = 70)
+  z_eval_df <- data.frame(Z1 = z_grid_vals)
   
-} else if (d_assoc == 2) {
+} else if (d == 2) {
   # 2D Mesh Grid for a Surface/Contour Plot
   z1_vals <- seq(quantile(dat$Z_assoc1, 0.05), quantile(dat$Z_assoc1, 0.95), length.out = 30)
   z2_vals <- seq(quantile(dat$Z_assoc2, 0.05), quantile(dat$Z_assoc2, 0.95), length.out = 30)
   
   # expand.grid creates every possible combination of Z1 and Z2 (900 rows)
   z_assoc_eval_df <- expand.grid(Z_assoc1 = z1_vals, Z_assoc2 = z2_vals)
-  
-} else {
-  # For d > 2, a full mesh grid becomes computationally explosive (Curse of Dimensionality).
-  # In this scenario, it is often best to simply evaluate the surface at the OBSERVED data points
-  # rather than an artificial grid.
-  z_assoc_eval_df <- dat[, ..Z_assoc_vars]
 }
-
-# Cross-fit the curve (or surface) along the Association dimensions
-assoc_ERS <- crossfit_ERS(
-  Y = dat[[Y_var]],
-  X = dat[, ..Z_assoc_vars],
-  C = dat[, ..C_vars],
-  x_eval = z_assoc_eval_df,
-  estimator = "DR",
-  L = 5,
-  outcome_fitter = SL_outcome_fitter,
-  gps_fitter = mvn_fitter,
-  optimize_bw = TRUE,
-  seed = 42
-)
 
 # Estimate the final curve over the grid using 5-fold cross-fitting
 # This automatically trains NN_outcome_fitter and mvn_fitter inside each fold
@@ -185,6 +309,7 @@ final_ERS <- crossfit_ERS(
 
 ers_plt <- ggplot(final_ERS$results, aes(x = -Z1, y = estimate)) + 
   # 1. Subtle density marks (rug plot) using the observed data
+  #geom_point() + 
   geom_rug(data = dat, aes(x = Z1), inherit.aes = FALSE, 
            alpha = 0.2, sides = "b", length = unit(0.05, "npc")) +
   
@@ -193,7 +318,7 @@ ers_plt <- ggplot(final_ERS$results, aes(x = -Z1, y = estimate)) +
   geom_line(linewidth = 1.2, color = "darkblue") + 
   
   # 3. Slide-ready theme and text sizes
-  theme_bw(base_size = 18) + 
+  theme_bw(base_size = 11) + 
   theme(
     plot.title = element_text(face = "bold", hjust = 0.5),
     axis.text = element_text(color = "black")
@@ -202,12 +327,12 @@ ers_plt <- ggplot(final_ERS$results, aes(x = -Z1, y = estimate)) +
   # 4. Clean mathematical x-axis label
   xlab(expression(Z == 0.77*PFOS + 0.14*PFOA + 0.26*PFNA - 0.56*PFHxS )) + 
   ylab("Birthweight (g)") + 
-  xlim(c(-1.8, 2.1)) +  
+  xlim(c(-1.8, 2.3)) +  
   ggtitle(NULL)
 
 ers_plt
 ggsave(filename = "results/jasa-initial-submission/ATL-AA/causal_ers_no_title.pdf",
-       plot = ers_plt, width = 8, height = 6)
+       plot = ers_plt, width = 7.2, height = 4)
 
 
 # MAVE --------------------------------------------------------------------
@@ -285,205 +410,6 @@ assoc_plt <- ggplot(assoc_ERS$results, aes(x = Z_assoc1, y = estimate)) +
   ggtitle("Association-based Exposure Response Surface")
 assoc_plt
 
-
-# Beta
-# Pi(Beta)
-# diagonal of Pi(beta)
-
 # Causal ERS
 ggsave(filename = "results/jasa-initial-submission/ATL-AA/assocation_ers.pdf",
        plot = assoc_plt, width = 8, height = 6)
-
-diag(Pi(beta))
-diag(Pi(beta_assoc))
-
-source("R/pCCA.R")
-
-
-# Heatmap -----------------------------------------------------------------
-
-library(ggplot2)
-library(dplyr)
-
-# 1. Create the data frame with your exact values
-plot_data <- data.frame(
-  Exposure = rep(c("PFOS", "PFOA", "PFNA", "PFHxS"), 2),
-  Method = rep(c("CSDR (d=1)", "SDR (d=1)"), each = 4),
-  Value = c(
-   diag(Pi(beta)), # Causal SDR values
-    diag(Pi(beta_assoc))  # Standard SDR values
-  )
-)
-
-# 2. Reorder factor levels so "Causal SDR" appears on the top row, 
-# and the exposures maintain their original order left-to-right.
-plot_data$Method <- factor(plot_data$Method, levels = c("SDR (d=1)", "CSDR (d=1)"))
-plot_data$Exposure <- factor(plot_data$Exposure, levels = c("PFOS", "PFOA", "PFNA", "PFHxS"))
-
-# 3. Create the heatmap
-heatmap <- ggplot(plot_data, aes(x = Exposure, y = Method, fill = Value)) +
-  # Draw the squares with a small white border
-  geom_tile(color = "white", linewidth = 1) +
-  
-  # Add the numeric values inside the squares (rounded to 3 decimal places)
-  # Dynamically switch text color to white if the background is too dark
-  geom_text(aes(label = sprintf("%.3f", Value), 
-                color = Value > 0.6), 
-            size = 6, fontface = "bold", show.legend = FALSE) +
-  scale_color_manual(values = c("black", "white")) +
-  
-  # Force the color scale to be exactly between 0 and 1
-  scale_fill_gradient(low = "white", high = "darkblue", limits = c(0, 1)) +
-  
-  # Clean, slide-ready theme
-  theme_minimal(base_size = 18) +
-  labs(
-    #title = "Subspace importance score",
-    title = NULL,
-    x = NULL,
-    y = NULL,
-    fill = "Importance\n(0 to 1)"
-  ) +
-  theme(
-    panel.grid = element_blank(),
-    plot.title = element_text(face = "bold"),
-    axis.text.x = element_text(face = "bold", color = "black"),
-    axis.text.y = element_text(face = "bold", color = "black")
-  )
-
-ggsave(filename = "results/jasa-initial-submission/ATL-AA/diag_plot_notitle.pdf",
-       plot = heatmap, width = 8, height = 4)
-
-
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-
-# 1. Define the methods and dimensions
-methods_list <- c("PCA", "pCCA", "MAVE", "Oracle-MAVE", "RA-MAVE", "DR-MAVE", "PO-MAVE", "RP-MAVE")
-dims_list <- paste0("Dim ", 1:10)
-
-# Hardcode the exact mean values from the screenshot row by row
-means_matrix <- matrix(c(
-  0.002, 0.003, 0.013, 0.018, 0.969, 0.979, 0.007, 0.004, 0.003, 0.002, # PCA
-  0.546, 0.716, 0.134, 0.134, 0.002, 0.002, 0.132, 0.122, 0.132, 0.081, # pCCA
-  0.530, 0.663, 0.370, 0.022, 0.002, 0.001, 0.117, 0.110, 0.113, 0.072, # MAVE
-  1.000, 1.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, # Oracle-MAVE
-  0.880, 0.947, 0.050, 0.006, 0.000, 0.000, 0.033, 0.030, 0.031, 0.022, # RA-MAVE
-  0.860, 0.928, 0.042, 0.005, 0.000, 0.001, 0.048, 0.045, 0.042, 0.029, # DR-MAVE
-  0.770, 0.874, 0.044, 0.007, 0.001, 0.001, 0.088, 0.082, 0.079, 0.054, # PO-MAVE
-  0.500, 0.580, 0.155, 0.163, 0.002, 0.002, 0.164, 0.171, 0.157, 0.105  # RP-MAVE
-), byrow = TRUE, nrow = 8, dimnames = list(methods_list, dims_list))
-
-# Convert the matrix into a long-format data frame for ggplot
-plot_data <- as.data.frame(as.table(means_matrix))
-colnames(plot_data) <- c("Method", "Dimension", "Value")
-
-# 2. Reorder factor levels 
-# rev() ensures "PCA" appears on the top row instead of the bottom
-plot_data$Method <- factor(plot_data$Method, levels = rev(methods_list))
-plot_data$Dimension <- factor(plot_data$Dimension, levels = dims_list)
-
-# 3. Create the heatmap
-heatmap <- ggplot(plot_data, aes(x = Dimension, y = Method, fill = Value)) +
-  # Draw the squares with a small white border
-  geom_tile(color = "white", linewidth = 1) +
-  
-  # Add the numeric values inside the squares (rounded to 3 decimal places)
-  # Dynamically switch text color to white if the background is too dark
-  geom_text(aes(label = sprintf("%.3f", Value), 
-                color = Value > 0.6), 
-            size = 3.5, fontface = "bold", show.legend = FALSE) +
-  scale_color_manual(values = c("black", "white")) +
-  
-  # Force the color scale to be exactly between 0 and 1
-  scale_fill_gradient(low = "white", high = "darkblue", limits = c(0, 1)) +
-  
-  # Clean, slide-ready theme
-  theme_minimal(base_size = 18) +
-  labs(
-    title = NULL,
-    x = NULL,
-    y = NULL,
-    fill = "Importance\n(0 to 1)"
-  ) +
-  theme(
-    panel.grid = element_blank(),
-    plot.title = element_text(face = "bold"),
-    # Angled x-axis text to prevent overlap with 10 columns
-    axis.text.x = element_text(face = "bold", color = "black", angle = 45, hjust = 1),
-    axis.text.y = element_text(face = "bold", color = "black")
-  )
-
-# Display the plot
-print(heatmap)
-
-# 4. Save the plot
-ggsave(filename = "results/jasa-initial-submission/ATL-AA/diag_plot_n=500.pdf",
-        plot = heatmap, width = 12, height = 5)
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-
-# 1. Define the methods and dimensions
-methods_list <- c("PCA", "pCCA", "MAVE", "Oracle-MAVE", "RA-MAVE", "DR-MAVE", "PO-MAVE", "RP-MAVE")
-dims_list <- paste0("Dim ", 1:10)
-
-# Hardcode the exact mean values from the n=5000 screenshot row by row
-means_matrix <- matrix(c(
-  0.002, 0.003, 0.011, 0.015, 0.972, 0.982, 0.007, 0.004, 0.003, 0.002, # PCA
-  0.819, 0.884, 0.053, 0.053, 0.001, 0.001, 0.053, 0.053, 0.053, 0.031, # pCCA
-  0.363, 0.782, 0.764, 0.010, 0.002, 0.000, 0.023, 0.021, 0.022, 0.013, # MAVE
-  1.000, 1.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, # Oracle-MAVE
-  0.999, 1.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, # RA-MAVE
-  0.996, 0.998, 0.002, 0.000, 0.000, 0.000, 0.001, 0.001, 0.001, 0.001, # DR-MAVE
-  0.945, 0.978, 0.001, 0.001, 0.000, 0.000, 0.018, 0.021, 0.022, 0.013, # PO-MAVE
-  0.827, 0.878, 0.050, 0.053, 0.001, 0.001, 0.052, 0.053, 0.052, 0.033  # RP-MAVE
-), byrow = TRUE, nrow = 8, dimnames = list(methods_list, dims_list))
-
-# Convert the matrix into a long-format data frame for ggplot
-plot_data <- as.data.frame(as.table(means_matrix))
-colnames(plot_data) <- c("Method", "Dimension", "Value")
-
-# 2. Reorder factor levels 
-# rev() ensures "PCA" appears on the top row instead of the bottom
-plot_data$Method <- factor(plot_data$Method, levels = rev(methods_list))
-plot_data$Dimension <- factor(plot_data$Dimension, levels = dims_list)
-
-# 3. Create the heatmap
-heatmap <- ggplot(plot_data, aes(x = Dimension, y = Method, fill = Value)) +
-  # Draw the squares with a small white border
-  geom_tile(color = "white", linewidth = 1) +
-  
-  # Add the numeric values inside the squares (rounded to 3 decimal places)
-  # Dynamically switch text color to white if the background is too dark
-  geom_text(aes(label = sprintf("%.3f", Value), 
-                color = Value > 0.6), 
-            size = 3.5, fontface = "bold", show.legend = FALSE) +
-  scale_color_manual(values = c("black", "white")) +
-  
-  # Force the color scale to be exactly between 0 and 1
-  scale_fill_gradient(low = "white", high = "darkblue", limits = c(0, 1)) +
-  
-  # Clean, slide-ready theme
-  theme_minimal(base_size = 18) +
-  labs(
-    title = NULL,
-    x = NULL,
-    y = NULL,
-    fill = "Importance\n(0 to 1)"
-  ) +
-  theme(
-    panel.grid = element_blank(),
-    plot.title = element_text(face = "bold"),
-    # Angled x-axis text to prevent overlap with 10 columns
-    axis.text.x = element_text(face = "bold", color = "black", angle = 45, hjust = 1),
-    axis.text.y = element_text(face = "bold", color = "black")
-  )
-
-# Display the plot
-print(heatmap)
-
-# 4. Save the plot
-ggsave(filename = "results/jasa-initial-submission/ATL-AA/diag_plot_n=5000.pdf",
-        plot = heatmap, width = 12, height = 5)
