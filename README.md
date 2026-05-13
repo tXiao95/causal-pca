@@ -69,4 +69,4 @@ Within `results/`:
 
 # References
 
-- Nabi, R., McNutt, T., & Shpitser, I. (2022). *Causal sufficient dimension reduction for longitudinal treatments*. Proceedings of Machine Learning Research. https://proceedings.mlr.press/v180/nabi22a.html
+- Nabi, R., McNutt, T., & Shpitser, I. (2022). *Semiparametric causal sufficient dimension reduction of multidimensional treatments*. Proceedings of Machine Learning Research. https://proceedings.mlr.press/v180/nabi22a.html
