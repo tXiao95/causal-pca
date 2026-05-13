@@ -48,8 +48,19 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
+# Datasets
 data/ENVISION/
-results/birthweight/
 data/ATL-AA/
+data/birthweight/
+data/cytokines/
+
+# Irrelevant studies
+results/birthweight/
 results/archive/
 results/bw_*
+
+# All one-off experiments
+sandbox/
+
+code/birthweight/
+code/cytokines
