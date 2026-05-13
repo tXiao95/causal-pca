@@ -61,9 +61,12 @@ results/bw_*
 
 # All one-off experiments
 sandbox/
+tests/
+outputs/
 
 code/birthweight/
 code/cytokines
 
 # ALl archive folders
 **/archive/
+**/**/archive/
