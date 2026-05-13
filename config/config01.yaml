@@ -1,9 +1,0 @@
-# config.yaml
-
-# Add more arguments as needed
-scenario: 1
-n: 
- - 100
- - 200
- - 400
- - 800
