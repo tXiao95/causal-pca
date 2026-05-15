@@ -47,6 +47,10 @@ We apply the proposed causal SDR framework to a four-component PFAS mixture to s
 
 ![](results/jasa-initial-submission/ATL-AA/ERS.png)
 
+## Dissemination
+
+This work has been presented as a [poster](https://github.com/tXiao95/causal-pca/blob/main/manuscript/posters/2026_ACIC_42x40.pdf) at the [American Causal Inference Conference (ACIC) 2026](https://sci-info.org/2026-meeting-2/) and as an [oral presentation](https://github.com/tXiao95/causal-pca/blob/main/manuscript/slides/2026-03-18-ENAR.pdf) at the [ENAR 2026 Spring Meeting](https://www.enar.org/meetings/spring2026/). 
+
 ---
 
 # Repository Structure
